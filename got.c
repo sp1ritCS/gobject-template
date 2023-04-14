@@ -100,12 +100,15 @@ static void got_close_file(GFile* file, gchar* data, gsize data_len) {
 	g_object_unref(g_object_get_data(G_OBJECT(file), GOT_FILE_KEY_STEAM));
 }
 
+static const gsize GOT_CONST_ZERO = 0;
 static GPtrArray* got_parse_case_name(const gchar* name) {
 	g_warn_if_fail(g_str_is_ascii(name));
 	gsize len = strlen(name);
 	
 	g_autoptr(GArray) element_indieces = g_array_new(FALSE, FALSE, sizeof(gsize));
-	for (gsize i = 0; i < len; i++) {
+	if (len > 0)
+		g_array_append_val(element_indieces, GOT_CONST_ZERO);
+	for (gsize i = 1; i < len; i++) {
 		if (g_ascii_isupper(name[i]))
 			g_array_append_val(element_indieces, i);
 	}
