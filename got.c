@@ -1,9 +1,11 @@
+#include "gotconfig.h"
+
 #include <glib.h>
 #include <gio/gio.h>
 #include <gio/gfiledescriptorbased.h>
-#include <gio/gunixoutputstream.h>
 
 #include <errno.h>
+#include <getopt.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -38,12 +40,12 @@ static gboolean got_do_template_replacement(
 					g_autofree gchar* key = g_malloc(keylen + 1);
 					memcpy(key, &data[cursor + 1], keylen);
 					key[keylen] = '\0';
-					
+
 					const gchar* replacement;
 					if ((replacement = g_hash_table_lookup(templates, key))) {
 						if (!write_fn(write_data, replacement, strlen(replacement)))
 							return FALSE;
-						
+
 						cursor = altcursor;
 						goto next_iter;
 					} else {
@@ -52,7 +54,7 @@ static gboolean got_do_template_replacement(
 				}
 			}
 		}
-		
+
 		if (!write_fn(write_data, &data[cursor], 1))
 			return FALSE;
 next_iter:
@@ -104,7 +106,7 @@ static const gsize GOT_CONST_ZERO = 0;
 static GPtrArray* got_parse_case_name(const gchar* name) {
 	g_warn_if_fail(g_str_is_ascii(name));
 	gsize len = strlen(name);
-	
+
 	g_autoptr(GArray) element_indieces = g_array_new(FALSE, FALSE, sizeof(gsize));
 	if (len > 0)
 		g_array_append_val(element_indieces, GOT_CONST_ZERO);
@@ -121,12 +123,12 @@ static GPtrArray* got_parse_case_name(const gchar* name) {
 			next = g_array_index(element_indieces, gsize, i + 1);
 		else
 			next = len;
-		
+
 		gsize token_len = next - this;
 		gchar* token = g_malloc(token_len + 1);
 		memcpy(token, &name[this], token_len);
 		token[token_len] = '\0';
-		
+
 		g_ptr_array_add(element_tokens, token);
 	}
 
@@ -141,24 +143,24 @@ typedef struct {
 
 static GotTokenVariations got_get_token_variations_from_token(const gchar* token) {
 	GotTokenVariations variations;
-	
+
 	gsize len = strlen(token);
-	
+
 	variations.lower = g_malloc(len + 1);
 	for (gsize i = 0; i < len; i++)
 		variations.lower[i] = g_ascii_tolower(token[i]);
 	variations.lower[len] = '\0';
-	
+
 	variations.upper = g_malloc(len + 1);
 	for (gsize i = 0; i < len; i++)
 		variations.upper[i] = i == 0 ? g_ascii_toupper(token[i]) : g_ascii_tolower(token[i]);
 	variations.upper[len] = '\0';
-	
+
 	variations.caps = g_malloc(len + 1);
 	for (gsize i = 0; i < len; i++)
 		variations.caps[i] = g_ascii_toupper(token[i]);
 	variations.caps[len] = '\0';
-	
+
 	return variations;
 }
 
@@ -186,7 +188,7 @@ static void got_element_section_free_inner(GotElementSection* section) {
 
 static GotElementSection got_get_element_section_from_name(const gchar* name) {
 	GotElementSection element;
-	
+
 	g_autoptr(GPtrArray) tokens = got_parse_case_name(name);
 	if (tokens->len <= 0) {
 		element.namespace_lower = NULL;
@@ -256,7 +258,7 @@ static void got_replacements_free_inner(GotReplacements* replacements) {
 
 static GotReplacements got_generate_replacements_from_name(const gchar* name, const gchar* parent) {
 	GotReplacements replacements;
-	
+
 	replacements.element = got_get_element_section_from_name(name);
 	GotElementSection parent_element = got_get_element_section_from_name(parent == NULL ? "GObject" : parent);
 	replacements.parent.parent = g_strdup_printf("%s%s", parent_element.namespace_upper, parent_element.name_upper);
@@ -268,39 +270,145 @@ static GotReplacements got_generate_replacements_from_name(const gchar* name, co
 
 static GHashTable* got_new_replacement_table_from_replacements(GotReplacements* replacements) {
 	GHashTable* replacement_table = g_hash_table_new(g_str_hash, g_str_equal);
-	
+
 	g_hash_table_insert(replacement_table, "ns", replacements->element.namespace_lower);
 	g_hash_table_insert(replacement_table, "Ns", replacements->element.namespace_upper);
 	g_hash_table_insert(replacement_table, "NS", replacements->element.namespace_caps);
-	
+
 	g_hash_table_insert(replacement_table, "name_wide", replacements->element.name_lower);
 	g_hash_table_insert(replacement_table, "name", replacements->element.name_lower_condensed);
 	g_hash_table_insert(replacement_table, "Name", replacements->element.name_upper);
 	g_hash_table_insert(replacement_table, "NAME_WIDE", replacements->element.name_caps);
 	g_hash_table_insert(replacement_table, "NAME", replacements->element.name_caps_condensed);
-	
+
 	g_hash_table_insert(replacement_table, "Parent", replacements->parent.parent);
 	g_hash_table_insert(replacement_table, "PARENT_TYPE", replacements->parent.parent_type);
-	
+
 	return replacement_table;
 }
 
-#define TEMPLATES_DIR "templates/"
+static const gchar* got_application_name = "got";
+
+static void got_print_usage(void(*print_fn)(const gchar* template, ...)) {
+	print_fn("\
+Usage: %s [OPTIONS] <template> <ClassName> [Parent]\n\
+  -o, --output=<OUTPUT> Set the directory where the resulting files will be created in.\n\
+  -l, --list-templates  List all available templates that can be used.\n\
+  -h, --help            Show the help page and exit.\n\
+  -v, --version         Show version and licensing information and exit.\n", got_application_name);
+}
+
+static void got_print_help(void(*print_fn)(const gchar* template, ...)) {
+	print_fn("GOT - GObject Template; Advanced boilerplate sourcecode generator for GObject.\n\n");
+	got_print_usage(print_fn);
+	print_fn("\n\
+Exit status:\n\
+  %d: Process exited as expected.\n\
+  %d: An error occured during runtime of the software.\n\
+  %d: The command-line invocation of %s was faulty.\n", 0, 1, 2, got_application_name);
+}
+
+static void got_print_version(void(*print_fn)(const gchar* template, ...)) {
+	print_fn("\
+%s (version %s)\n\
+Copyright (c) 2023 Florian \"sp1rit\" <sp1rit@national.shitposting.agency>\n\
+\n\
+Licensed under the GNU Affero General Public License version 3 or later.\n\
+  You should have received a copy of it along with this program.\n\
+  If not, see <https://www.gnu.org/licenses/>.\n\
+\n\
+This is free software: you are free to change and redistribute it.\n\
+This program comes with ABSOLUTELY NO WARRANTY, to the extent permitted by law.\n", got_application_name, GOT_VERSION);
+}
+
+static gint got_list_templates(const gchar* templates_dir) {
+	g_autoptr(GFile) template = g_file_new_for_path(templates_dir);
+
+	GError* err = NULL;
+	gchar* query_attributes = g_strconcat(G_FILE_ATTRIBUTE_STANDARD_NAME, ",", G_FILE_ATTRIBUTE_STANDARD_TYPE, NULL);
+	g_autoptr(GFileEnumerator) iter = g_file_enumerate_children(template, query_attributes, G_FILE_QUERY_INFO_NONE, NULL, &err);
+	g_free(query_attributes);
+	if (!iter) {
+		g_critical("Failed reading templates dir: %s", err->message);
+		g_error_free(err);
+		return 1;
+	}
+
+	gint return_code = 0;
+	while (TRUE) {
+		GFileInfo* info;
+		if (!g_file_enumerator_iterate(iter, &info, NULL, NULL, &err)) {
+			g_critical("Failed querying file: %s", err->message);
+			return_code = 1;
+			g_error_free(err);
+			err = NULL;
+			continue;
+		}
+		if (!info)
+			break;
+		if (g_file_info_get_file_type(info) == G_FILE_TYPE_DIRECTORY)
+			g_print("%s\n", g_file_info_get_name(info));
+	}
+
+	return return_code;
+}
 
 int main(int argc, char** argv) {
-	if (argc != 3 && argc != 4) {
-		g_printerr("Usage: %s <template> <ClassName> [Parent]\n", argc > 0 ? argv[0] : "got");
-		return 2;
-	}
-	
+	if (argc > 0)
+		got_application_name = argv[0];
+
 	const gchar* templates_dir;
 	if (!(templates_dir = g_getenv("GOT_TEMPLATES_DIR")))
-		templates_dir = TEMPLATES_DIR;
-	
+		templates_dir = GOT_TEMPLATES_DIR;
+
+	gint c;
+	const gchar* template_name;
+	const gchar* class_name;
+	const gchar* parent = NULL;
 	const gchar* output_dir = ".";
-	
-	g_autoptr(GFile) template = g_file_new_build_filename(templates_dir, argv[1], NULL);
-	
+
+	const struct option long_options[] = {
+		{"help", no_argument, NULL, 'h'},
+		{"version", no_argument, NULL, 'v'},
+		{"list-templates", no_argument, NULL, 'l'},
+		{"output", required_argument, NULL, 'o'},
+		{0, 0, 0, 0}
+	};
+
+	while ((c = getopt_long(argc, argv, "hlvo:", long_options, NULL)) != -1) {
+		switch (c) {
+			case 'h':
+				got_print_help(g_print);
+				return 0;
+			case 'v':
+				got_print_version(g_print);
+				return 0;
+			case 'l':
+				got_list_templates(templates_dir);
+				return 0;
+			case 'o':
+				output_dir = optarg;
+				break;
+			case '?':
+			default:
+				got_print_usage(g_printerr);
+				return 2;
+		}
+	}
+
+	if (optind + 1 < argc) {
+		template_name = argv[optind++];
+		class_name = argv[optind++];
+		if (optind < argc) {
+			parent = argv[optind++];
+		}
+	} else {
+		got_print_usage(g_printerr);
+		return 2;
+	}
+
+	g_autoptr(GFile) template = g_file_new_build_filename(templates_dir, template_name, NULL);
+
 	GError* err = NULL;
 	g_autoptr(GFileEnumerator) iter = g_file_enumerate_children(template, G_FILE_ATTRIBUTE_STANDARD_NAME, G_FILE_QUERY_INFO_NONE, NULL, &err);
 	if (!iter) {
@@ -309,7 +417,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	GotReplacements replacements = got_generate_replacements_from_name(argv[2], argc >= 4 ? argv[3] : NULL);
+	GotReplacements replacements = got_generate_replacements_from_name(class_name, parent);
 	GHashTable* replacement_table = got_new_replacement_table_from_replacements(&replacements);									
 
 	while (TRUE) {
@@ -323,11 +431,11 @@ int main(int argc, char** argv) {
 		}
 		if (!info)
 			break;
-		
+
 		const gchar* filename = g_file_info_get_name(info);
 		if (!g_str_has_suffix(filename, ".got"))
 			continue;
-		
+
 		GByteArray* new_filename = g_byte_array_new();
 		got_do_template_replacement(replacement_table, filename, strlen(filename), got_replacement_write_memory, &new_filename);
 		new_filename = g_byte_array_remove_range(new_filename, new_filename->len - 4, 4);
@@ -350,12 +458,12 @@ int main(int argc, char** argv) {
 
 		got_do_template_replacement(replacement_table, data, data_len, got_replacement_write_stream, output_stream);
 		g_object_unref(output_stream);
-		
+
 		got_close_file(file, data, data_len);
 	}
 
 	g_hash_table_unref(replacement_table);
 	got_replacements_free_inner(&replacements);
-	
+
 	return 0;
 }

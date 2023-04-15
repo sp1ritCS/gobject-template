@@ -1,0 +1,3 @@
+#define GOT_FALLBACK_APPLICATION_NAME "@got_binary_name@"
+#define GOT_VERSION "@got_version@"
+#define GOT_TEMPLATES_DIR "@got_templates_dir@"
