@@ -2,7 +2,9 @@
 
 #include <glib.h>
 #include <gio/gio.h>
+#ifdef GOT_HAS_GIO_UNIX
 #include <gio/gfiledescriptorbased.h>
+#endif
 
 #include <errno.h>
 #include <getopt.h>
@@ -62,11 +64,11 @@ next_iter:
 	return TRUE;
 }
 
-#define HAVE_MMAP 1
 #define GOT_FILE_KEY_STEAM "got-steam"
 
 static gssize got_read_file(GFile* file, gchar** data) {
 	GError* err = NULL;
+#if defined(GOT_HAS_MMAP) && defined(GOT_HAS_GIO_UNIX)
 	GFileInfo* info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_SIZE, G_FILE_QUERY_INFO_NONE, NULL, &err);
 	if (!info) {
 		g_critical("Failure reading file attributes: %s", err->message);
@@ -92,14 +94,26 @@ static gssize got_read_file(GFile* file, gchar** data) {
 	}
 
 	g_object_set_data(G_OBJECT(file), GOT_FILE_KEY_STEAM, stream);
+#else
+	gsize file_size;
+	if (!g_file_load_contents(file, NULL, data, &file_size, NULL, &err)) {
+		g_critical("Failed reading file: %s", err->message);
+		g_error_free(err);
+		return -1;
+	}
+#endif
 
 	return file_size;
 }
 
-static void got_close_file(GFile* file, gchar* data, gsize data_len) {
+static void got_close_file(__attribute__((unused)) GFile* file, gchar* data, __attribute__((unused)) gsize data_len) {
+#if defined(GOT_HAS_MMAP) && defined(GOT_HAS_GIO_UNIX)
 	if (munmap(data, data_len) != 0)
 		g_critical("Failed unmapping file: %s", strerror(errno));
 	g_object_unref(g_object_get_data(G_OBJECT(file), GOT_FILE_KEY_STEAM));
+#else
+	g_free(data);
+#endif
 }
 
 static const gsize GOT_CONST_ZERO = 0;
