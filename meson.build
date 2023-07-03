@@ -39,3 +39,5 @@ app = executable(bin_name, src, config,
 )
 
 install_subdir('templates', install_dir : templates_dir, strip_directory : true)
+
+subdir('tests')
