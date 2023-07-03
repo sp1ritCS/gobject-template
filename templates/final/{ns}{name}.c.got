@@ -8,3 +8,7 @@ G_DEFINE_TYPE ({Ns}{Name}, {ns}_{name_wide}, {PARENT_TYPE})
 
 static void {ns}_{name_wide}_class_init({Ns}{Name}Class* class) {}
 static void {ns}_{name_wide}_init({Ns}{Name}* self) {}
+
+{Ns}{Name}* {ns}_{name_wide}_new(void) {
+	return g_object_new({NS}_TYPE_{NAME_WIDE}, NULL);
+}

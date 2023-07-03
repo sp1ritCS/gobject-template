@@ -8,6 +8,8 @@ G_BEGIN_DECLS
 #define {NS}_TYPE_{NAME_WIDE} ({ns}_{name_wide}_get_type())
 G_DECLARE_FINAL_TYPE ({Ns}{Name}, {ns}_{name_wide}, {NS}, {NAME_WIDE}, {Parent})
 
+{Ns}{Name}* {ns}_{name_wide}_new(void);
+
 G_END_DECLS
 
 #endif // __{NS}{NAME}_H__

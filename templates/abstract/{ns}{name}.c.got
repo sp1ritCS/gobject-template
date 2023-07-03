@@ -1,0 +1,6 @@
+#include "{ns}{name}.h"
+
+G_DEFINE_ABSTRACT_TYPE ({Ns}{Name}, {ns}_{name_wide}, {PARENT_TYPE})
+
+static void {ns}_{name_wide}_class_init({Ns}{Name}Class* class) {}
+static void {ns}_{name_wide}_init({Ns}{Name}* self) {}

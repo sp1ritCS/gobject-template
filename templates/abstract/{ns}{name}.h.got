@@ -12,8 +12,6 @@ struct _{Ns}{Name}Class {
 	{Parent}Class parent_class;
 };
 
-{Ns}{Name}* {ns}_{name_wide}_new(void);
-
 G_END_DECLS
 
 #endif // __{NS}{NAME}_H__
